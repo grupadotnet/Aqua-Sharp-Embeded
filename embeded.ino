@@ -12,9 +12,6 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <Adafruit_NeoPixel.h>
-#ifdef __AVR__
-#include <avr/power.h>
-#endif
 #define PIN 6
 #define NUMPIXELS 30
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
@@ -38,36 +35,29 @@ void setup()
 {
   Serial.begin(9600);
   sensors.begin();
-
   pixels.begin();
-  pixels.clear();
-
-  for (int i = 0; i < 2; i++)
-  {
-    if (i == 0)
-    {
-      pixels.fill(pixels.Color(255, 0, 0));
-      pixels.show();
-      delay(500);
-    }
-    else
-    {
-      pixels.fill(pixels.Color(0, 0, 255));
-      pixels.show();
-      delay(500);
-    }
-  }
-
   pinMode(TdsSensorPin, INPUT);
   pinMode(2, OUTPUT);
 }
 
 void loop()
 {
+  getTemperature();
+  getLighting();
+  getTds();
+  getPh();
+}
+
+void getTemperature()
+{
   sensors.requestTemperatures();
   Serial.print(sensors.getTempCByIndex(0));
   Serial.println("C");
   delay(1000);
+}
+
+void getLighting()
+{
   pixels.clear();
   for (int i = 0; i < 3; i++)
   {
@@ -90,6 +80,11 @@ void loop()
       delay(500);
     }
   }
+}
+
+void getTds()
+{
+  // docelowo bedzie krotsza wwrsja ze strony: https://wiki.dfrobot.com/Gravity__Analog_TDS_Sensor___Meter_For_Arduino_SKU__SEN0244
   static unsigned long analogSampleTimepoint = millis();
   if (millis() - analogSampleTimepoint > 40U) // every 40 milliseconds,read the analog value from the ADC
   {
@@ -116,36 +111,8 @@ void loop()
     Serial.print(tdsValue, 0);
     Serial.println("ppm");
   }
-
-  for (int i = 0; i < 10; i++) // Get 10 sample value from the sensor for smooth the value
-  {
-    buf[i] = analogRead(SensorPin);
-    delay(10);
-  }
-  for (int i = 0; i < 9; i++) // sort the analog from small to large
-  {
-    for (int j = i + 1; j < 10; j++)
-    {
-      if (buf[i] > buf[j])
-      {
-        temp = buf[i];
-        buf[i] = buf[j];
-        buf[j] = temp;
-      }
-    }
-  }
-  avgValue = 0;
-  for (int i = 2; i < 8; i++) // take the average value of 6 center sample
-    avgValue += buf[i];
-  float phValue = (float)avgValue * 7.0 / 1024 / 6; // convert the analog into millivolt // zmiana wzgledem oryginalu: 5.0 -> 7.0
-  phValue = 2.8 * phValue;                          // convert the millivolt into pH value
-  Serial.print(" pH:");
-  Serial.print(phValue, 2);
-  Serial.println(" ");
-  digitalWrite(13, HIGH);
-  delay(800);
-  digitalWrite(13, LOW);
 }
+
 int getMedianNum(int bArray[], int iFilterLen)
 {
   int bTab[iFilterLen];
@@ -186,4 +153,36 @@ int getMedianNum(int bArray[], int iFilterLen)
       }
     }
   }
+}
+
+void getPh()
+{
+  for (int i = 0; i < 10; i++) // Get 10 sample value from the sensor for smooth the value
+  {
+    buf[i] = analogRead(SensorPin);
+    delay(10);
+  }
+  for (int i = 0; i < 9; i++) // sort the analog from small to large
+  {
+    for (int j = i + 1; j < 10; j++)
+    {
+      if (buf[i] > buf[j])
+      {
+        temp = buf[i];
+        buf[i] = buf[j];
+        buf[j] = temp;
+      }
+    }
+  }
+  avgValue = 0;
+  for (int i = 2; i < 8; i++) // take the average value of 6 center sample
+    avgValue += buf[i];
+  float phValue = (float)avgValue * 7.0 / 1024 / 6; // convert the analog into millivolt // zmiana wzgledem oryginalu: 5.0 -> 7.0
+  phValue = 2.8 * phValue;                          // convert the millivolt into pH value
+  Serial.print(" pH:");
+  Serial.print(phValue, 2);
+  Serial.println(" ");
+  digitalWrite(13, HIGH);
+  delay(800);
+  digitalWrite(13, LOW);
 }
