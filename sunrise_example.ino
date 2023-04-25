@@ -1,8 +1,8 @@
 // //#include "FastLED.h"
 
-// #define NUM_LEDS 6
+// #define NUM_LEDS 30
 
-// #define DATA_PIN 13
+// #define DATA_PIN 6
 
 // DEFINE_GRADIENT_PALETTE( sun_rise ) {
 //   0,     0,  0,  0,   //black
