@@ -1,188 +1,174 @@
-
-//  class CreateMeasurementViewModel()
-// {
-//     public DateTime Time;
-//     public float Temperature;
-//     public uint TDS;
-//     public bool LightOn;
-//     public int AquariumId;
-//     notacja iso rok-miesiac-dzientygodnia-czas
-// }
-
-#include <OneWire.h>
-#include <DallasTemperature.h>
 #include <Adafruit_NeoPixel.h>
-#define PIN 6
-#define NUMPIXELS 30
-Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
-#define DELAYVAL 500
-#define ONE_WIRE_BUS 0
-#define TdsSensorPin A1
-#define VREF 5.0          // analog reference voltage(Volt) of the ADC
-#define SCOUNT 30         // sum of sample point
-int analogBuffer[SCOUNT]; // store the analog value in the array, read from ADC
-int analogBufferTemp[SCOUNT];
-int analogBufferIndex = 0, copyIndex = 0;
-float averageVoltage = 0, tdsValue = 0, temperature = 25;
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
-#define SensorPin 0         // pH meter Analog output to Arduino Analog Input 0
-unsigned long int avgValue; // Store the average value of the sensor feedback
-float b;
-int buf[10], temp;
+#include <WiFiNINA.h>
 
+#define RGB_PIN 6
+#define NUMPIXELS 30
+
+Adafruit_NeoPixel pixels(NUMPIXELS, RGB_PIN, NEO_GRB + NEO_KHZ800);
+
+char ssid[] = "yourNetwork";  // your network SSID (name)
+char pass[] = "yourPassword"; // your network password (use for WPA, or use as key for WEP)
+int keyIndex = 0;             // your network key Index number (needed only for WEP)
+
+int led = LED_BUILTIN;
+int status = WL_IDLE_STATUS;
+WiFiServer server(80);
 void setup()
 {
-  Serial.begin(9600);
-  sensors.begin();
   pixels.begin();
-  pinMode(TdsSensorPin, INPUT);
-  pinMode(2, OUTPUT);
+  pixels.clear();
+  pixels.setPixelColor(0, pixels.Color(0, 255, 0));
+  pixels.show();
+  // Initialize serial and wait for port to open:
+  Serial.begin(9600);
+  while (!Serial)
+  {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  Serial.println("Access Point Web Server");
+
+  pinMode(led, OUTPUT); // set the LED pin mode
+
+  // check for the WiFi module:
+  if (WiFi.status() == WL_NO_MODULE)
+  {
+    Serial.println("Communication with WiFi module failed!");
+    // don't continue
+    while (true)
+      ;
+  }
+
+  String fv = WiFi.firmwareVersion();
+  if (fv < WIFI_FIRMWARE_LATEST_VERSION)
+  {
+    Serial.println("Please upgrade the firmware");
+  }
+
+  // print the network name (SSID);
+  Serial.print("Creating access point named: ");
+  Serial.println(ssid);
+
+  // Create open network. Change this line if you want to create an WEP network:
+  status = WiFi.beginAP(ssid, pass);
+  if (status != WL_AP_LISTENING)
+  {
+    Serial.println("Creating access point failed");
+    // don't continue
+    while (true)
+      ;
+  }
+
+  // wait 10 seconds for connection:
+  delay(10000);
+
+  // start the web server on port 80
+  server.begin();
+
+  // you're connected now, so print out the status
+  printWiFiStatus();
 }
 
 void loop()
 {
-  getTemperature();
-  getLighting();
-  getTds();
-  getPh();
-}
-
-void getTemperature()
-{
-  sensors.requestTemperatures();
-  Serial.print(sensors.getTempCByIndex(0));
-  Serial.println("C");
-  delay(1000);
-}
-
-void getLighting()
-{
-  pixels.clear();
-  for (int i = 0; i < 3; i++)
+  // compare the previous status to the current status
+  if (status != WiFi.status())
   {
-    if (i == 0)
+    // it has changed update the variable
+    status = WiFi.status();
+
+    if (status == WL_AP_CONNECTED)
     {
-      pixels.fill(pixels.Color(255, 0, 0));
-      pixels.show();
-      delay(500);
-    }
-    else if (i == 1)
-    {
-      pixels.fill(pixels.Color(0, 255, 0));
-      pixels.show();
-      delay(500);
+      // a device has connected to the AP
+      Serial.println("Device connected to AP");
     }
     else
     {
-      pixels.fill(pixels.Color(0, 0, 255));
-      pixels.show();
-      delay(500);
+      // a device has disconnected from the AP, and we are back in listening mode
+      Serial.println("Device disconnected from AP");
     }
+  }
+
+  WiFiClient client = server.available(); // listen for incoming clients
+
+  if (client)
+  {                               // if you get a client,
+    Serial.println("new client"); // print a message out the serial port
+    String currentLine = "";      // make a String to hold incoming data from the client
+    while (client.connected())
+    { // loop while the client's connected
+      if (client.available())
+      {                         // if there's bytes to read from the client,
+        char c = client.read(); // read a byte, then
+        Serial.write(c);        // print it out the serial monitor
+        if (c == '\n')
+        { // if the byte is a newline character
+
+          // if the current line is blank, you got two newline characters in a row.
+          // that's the end of the client HTTP request, so send a response:
+          if (currentLine.length() == 0)
+          {
+            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
+            // and a content-type so the client knows what's coming, then a blank line:
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println();
+
+            // the content of the HTTP response follows the header:
+            client.print("Click <a href=\"/H\">here</a> turn the LED on<br>");
+            client.print("Click <a href=\"/L\">here</a> turn the LED off<br>");
+
+            int randomReading = analogRead(A1);
+            client.print("Random reading from analog pin: ");
+            client.print(randomReading);
+
+            // The HTTP response ends with another blank line:
+            client.println();
+            // break out of the while loop:
+            break;
+          }
+          else
+          { // if you got a newline, then clear currentLine:
+            currentLine = "";
+          }
+        }
+        else if (c != '\r')
+        {                   // if you got anything else but a carriage return character,
+          currentLine += c; // add it to the end of the currentLine
+        }
+
+        // Check to see if the client request was "GET /H" or "GET /L":
+        if (currentLine.endsWith("GET /H"))
+        {
+          pixels.clear();
+          pixels.setPixelColor(0, pixels.Color(0, 255, 0));
+          pixels.show();
+        }
+        if (currentLine.endsWith("GET /L"))
+        {
+          pixels.clear();
+          pixels.show();
+        }
+      }
+    }
+    // close the connection:
+    client.stop();
+    Serial.println("client disconnected");
   }
 }
 
-void getTds()
+void printWiFiStatus()
 {
-  // docelowo bedzie krotsza wwrsja ze strony: https://wiki.dfrobot.com/Gravity__Analog_TDS_Sensor___Meter_For_Arduino_SKU__SEN0244
-  static unsigned long analogSampleTimepoint = millis();
-  if (millis() - analogSampleTimepoint > 40U) // every 40 milliseconds,read the analog value from the ADC
-  {
-    analogSampleTimepoint = millis();
-    analogBuffer[analogBufferIndex] = analogRead(TdsSensorPin); // read the analog value and store into the buffer
-    analogBufferIndex++;
-    if (analogBufferIndex == SCOUNT)
-      analogBufferIndex = 0;
-  }
-  static unsigned long printTimepoint = millis();
-  if (millis() - printTimepoint > 800U)
-  {
-    printTimepoint = millis();
-    for (copyIndex = 0; copyIndex < SCOUNT; copyIndex++)
-      analogBufferTemp[copyIndex] = analogBuffer[copyIndex];
-    averageVoltage = getMedianNum(analogBufferTemp, SCOUNT) * (float)VREF / 1024.0;                                                                                                  // read the analog value more stable by the median filtering algorithm, and convert to voltage value
-    float compensationCoefficient = 1.0 + 0.02 * (temperature - 25.0);                                                                                                               // temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02*(fTP-25.0));
-    float compensationVolatge = averageVoltage / compensationCoefficient;                                                                                                            // temperature compensation
-    tdsValue = (133.42 * compensationVolatge * compensationVolatge * compensationVolatge - 255.86 * compensationVolatge * compensationVolatge + 857.39 * compensationVolatge) * 0.5; // convert voltage value to tds value
-    // Serial.print("voltage:");
-    // Serial.print(averageVoltage,2);
-    // Serial.print("V   ");
-    Serial.print("TDS Value:");
-    Serial.print(tdsValue, 0);
-    Serial.println("ppm");
-  }
-}
+  // print the SSID of the network you're attached to:
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
 
-int getMedianNum(int bArray[], int iFilterLen)
-{
-  int bTab[iFilterLen];
-  for (byte i = 0; i < iFilterLen; i++)
-    bTab[i] = bArray[i];
-  int i, j, bTemp;
-  for (j = 0; j < iFilterLen - 1; j++)
-  {
-    for (i = 0; i < iFilterLen - j - 1; i++)
-    {
-      if (bTab[i] > bTab[i + 1])
-      {
-        bTemp = bTab[i];
-        bTab[i] = bTab[i + 1];
-        bTab[i + 1] = bTemp;
-      }
-    }
-  }
-  if ((iFilterLen & 1) > 0)
-    bTemp = bTab[(iFilterLen - 1) / 2];
-  else
-    bTemp = (bTab[iFilterLen / 2] + bTab[iFilterLen / 2 - 1]) / 2;
-  return bTemp;
-  for (int i = 0; i < 10; i++) // Get 10 sample value from the sensor for smooth the value
-  {
-    buf[i] = analogRead(SensorPin);
-    delay(10);
-  }
-  for (int i = 0; i < 9; i++) // sort the analog from small to large
-  {
-    for (int j = i + 1; j < 10; j++)
-    {
-      if (buf[i] > buf[j])
-      {
-        temp = buf[i];
-        buf[i] = buf[j];
-        buf[j] = temp;
-      }
-    }
-  }
-}
+  // print your WiFi shield's IP address:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
 
-void getPh()
-{
-  for (int i = 0; i < 10; i++) // Get 10 sample value from the sensor for smooth the value
-  {
-    buf[i] = analogRead(SensorPin);
-    delay(10);
-  }
-  for (int i = 0; i < 9; i++) // sort the analog from small to large
-  {
-    for (int j = i + 1; j < 10; j++)
-    {
-      if (buf[i] > buf[j])
-      {
-        temp = buf[i];
-        buf[i] = buf[j];
-        buf[j] = temp;
-      }
-    }
-  }
-  avgValue = 0;
-  for (int i = 2; i < 8; i++) // take the average value of 6 center sample
-    avgValue += buf[i];
-  float phValue = (float)avgValue * 7.0 / 1024 / 6; // convert the analog into millivolt // zmiana wzgledem oryginalu: 5.0 -> 7.0
-  phValue = 2.8 * phValue;                          // convert the millivolt into pH value
-  Serial.print(" pH:");
-  Serial.print(phValue, 2);
-  Serial.println(" ");
-  digitalWrite(13, HIGH);
-  delay(800);
-  digitalWrite(13, LOW);
+  // print where to go in a browser:
+  Serial.print("To see this page in action, open a browser to http://");
+  Serial.println(ip);
 }
